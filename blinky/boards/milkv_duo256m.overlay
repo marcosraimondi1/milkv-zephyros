@@ -1,0 +1,27 @@
+/ {
+	aliases {
+		led0 = &led0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led0: led_0 {
+			gpios = <&pwr_gpio 2 0>;
+			label = "LED 0";
+		};
+        };
+
+        chosen {
+                zephyr,console = &uart4;
+                zephyr,shell-uart = &uart4;
+        };
+};
+
+&uart4 {
+        status = "okay";
+        current-speed = <115200>;
+};
+
+&pwr_gpio {
+	status = "okay";
+};
