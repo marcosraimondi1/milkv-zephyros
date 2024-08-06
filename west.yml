@@ -8,7 +8,9 @@ manifest:
   remotes:
     - name: zephyrproject-rtos
       url-base: https://github.com/zephyrproject-rtos
-    - name: xingrz-zephyr
+      
+    # Add a new remote for the forked Zephyr repository with milkv-duo support
+    - name: xingrz-zephyr 
       url-base: https://github.com/xingrz
 
   projects:

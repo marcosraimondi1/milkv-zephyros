@@ -4,8 +4,11 @@
 #define _RSC_TABLE_H_
 
 #define SIZE_1M 0x100000
-#define ZEPHYR_SIZE 2 * SIZE_1M
-#define START_ADDR 0x8fe00000 // DRAM_BASE + DRAM_SIZE - ZEPHYR_SIZE
+#define SIZE_1K 1024
+#define DRAM_BASE 0x80000000
+#define DRAM_SIZE 64 * SIZE_1M    // 256 for duo 256m
+#define ZEPHYR_SIZE 768 * SIZE_1K // 2 * SIZE_1M for duo 256m
+#define START_ADDR DRAM_BASE + DRAM_SIZE - ZEPHYR_SIZE // 0x8fe00000 for 256m
 
 #ifdef __cplusplus
 extern "C" {
