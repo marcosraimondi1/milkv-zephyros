@@ -12,9 +12,10 @@
 		};
 	};
 
-	mcusram3: memory1@83ff8000 {
+	// location of vdev0buffer in linux dts
+	mcusram3: memory1@8fff8000 {
 		compatible = "mmio-sram";
-		reg = <0x83ff8000 0x4000>;
+		reg = <0x8fff8000 0x4000>;
 	};
 
 	chosen {

@@ -6,17 +6,19 @@ manifest:
     west-commands: scripts/west-commands.yml
 
   remotes:
-    - name: zephyrproject-rtos
-      url-base: https://github.com/zephyrproject-rtos
-      
     # Add a new remote for the forked Zephyr repository with milkv-duo support
     - name: xingrz-zephyr 
       url-base: https://github.com/xingrz
 
+    # or use the official Zephyr repository with revision: pull/69594/head
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+  
   projects:
     - name: zephyr
-      remote: xingrz-zephyr
-      revision: refs/heads/milkv-duo/hwmv2/dev
+      remote: zephyrproject-rtos
+      revision: pull/69594/head
+      clone-depth: 1
       import:
         # By using name-allowlist we can clone only the modules that are
         # strictly needed by the application.
