@@ -25,3 +25,4 @@ manifest:
         name-allowlist:
           - open-amp
           - libmetal
+          - tflite-micro
