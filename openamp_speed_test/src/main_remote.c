@@ -36,12 +36,12 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_INF);
 #define SHM_START_ADDR DT_REG_ADDR(SHM_NODE)
 #define SHM_SIZE       DT_REG_SIZE(SHM_NODE)
 
-#define APP_TASK_STACK_SIZE (2048)
+#define APP_TASK_STACK_SIZE (8192)
 
 /* Add 1024 extra bytes for the TTY task stack for the "tx_buff" buffer. */
-#define APP_TTY_TASK_STACK_SIZE (2048 + 2048)
+#define APP_TTY_TASK_STACK_SIZE (8192)
 
-#define MESSAGE_SIZE 2032 // 2048 (as defined in linux kernel) - 16 (for rpmsg header)
+#define MESSAGE_SIZE 4080 // 2048 (as defined in linux kernel) - 16 (for rpmsg header)
 #define NUM_MESSAGES 2300
 
 K_THREAD_STACK_DEFINE(thread_mng_stack, APP_TASK_STACK_SIZE);
