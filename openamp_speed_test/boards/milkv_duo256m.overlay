@@ -1,0 +1,35 @@
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	
+	soc {
+		ipm:ipm@1900000 {
+			compatible = "sophgo,cv180x-ipm";
+			reg = <0x1900000 DT_SIZE_K(4)>;
+			interrupts = <61 1>;
+			interrupt-parent = <&plic0>;
+			status = "disabled";
+		};
+	};
+
+	// location of vdev0buffer in linux dts
+	mcusram3: memory1@8fff8000 {
+		compatible = "mmio-sram";
+		reg = <0x8fff8000 0x4000>;
+	};
+
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,ipc_shm = &mcusram3;
+		zephyr,ipc = &ipm;
+    };
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+};
+
+&ipm {
+	status = "okay";
+};
