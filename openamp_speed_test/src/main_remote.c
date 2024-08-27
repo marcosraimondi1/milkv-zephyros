@@ -36,16 +36,15 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_INF);
 #define SHM_START_ADDR DT_REG_ADDR(SHM_NODE)
 #define SHM_SIZE       DT_REG_SIZE(SHM_NODE)
 
-#define APP_TASK_STACK_SIZE (8192)
-
-/* Add 1024 extra bytes for the TTY task stack for the "tx_buff" buffer. */
+#define APP_MNG_TASK_STACK_SIZE (1024)
+#define APP_SC_TASK_STACK_SIZE  (1024)
 #define APP_TTY_TASK_STACK_SIZE (8192)
 
 #define MESSAGE_SIZE 4080 // 2048 (as defined in linux kernel) - 16 (for rpmsg header)
 #define NUM_MESSAGES 2300
 
-K_THREAD_STACK_DEFINE(thread_mng_stack, APP_TASK_STACK_SIZE);
-K_THREAD_STACK_DEFINE(thread_rp__client_stack, APP_TASK_STACK_SIZE);
+K_THREAD_STACK_DEFINE(thread_mng_stack, APP_MNG_TASK_STACK_SIZE);
+K_THREAD_STACK_DEFINE(thread_rp__client_stack, APP_SC_TASK_STACK_SIZE);
 K_THREAD_STACK_DEFINE(thread_tty_stack, APP_TTY_TASK_STACK_SIZE);
 
 static struct k_thread thread_mng_data;
@@ -426,11 +425,18 @@ task_end:
 int main(void)
 {
 	printk("Starting application threads!\n");
-	k_thread_create(&thread_mng_data, thread_mng_stack, APP_TASK_STACK_SIZE, rpmsg_mng_task,
-			NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
-	k_thread_create(&thread_rp__client_data, thread_rp__client_stack, APP_TASK_STACK_SIZE,
-			app_rpmsg_client_sample, NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
-	k_thread_create(&thread_tty_data, thread_tty_stack, APP_TTY_TASK_STACK_SIZE, app_rpmsg_tty,
-			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	k_tid_t mng =
+		k_thread_create(&thread_mng_data, thread_mng_stack, APP_MNG_TASK_STACK_SIZE,
+				rpmsg_mng_task, NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
+	k_tid_t rpmsg_sc = k_thread_create(&thread_rp__client_data, thread_rp__client_stack,
+					   APP_SC_TASK_STACK_SIZE, app_rpmsg_client_sample, NULL,
+					   NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	k_tid_t tty =
+		k_thread_create(&thread_tty_data, thread_tty_stack, APP_TTY_TASK_STACK_SIZE,
+				app_rpmsg_tty, NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+
+	k_thread_name_set(mng, "manager");
+	k_thread_name_set(rpmsg_sc, "rpmsg-client-sample");
+	k_thread_name_set(tty, "rpmsg-netlink");
 	return 0;
 }
