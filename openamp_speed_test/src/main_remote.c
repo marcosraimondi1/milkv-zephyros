@@ -40,10 +40,10 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_INF);
 
 #define APP_MNG_TASK_STACK_SIZE (1024)
 #define APP_SC_TASK_STACK_SIZE  (1024)
-#define APP_TTY_TASK_STACK_SIZE (8192)
+#define APP_TTY_TASK_STACK_SIZE (1024)
 
-#define MESSAGE_SIZE 4080 // 2048 (as defined in linux kernel) - 16 (for rpmsg header)
-#define NUM_MESSAGES 2300
+#define MESSAGE_SIZE 4
+#define NUM_MESSAGES 5000
 
 K_THREAD_STACK_DEFINE(thread_mng_stack, APP_MNG_TASK_STACK_SIZE);
 K_THREAD_STACK_DEFINE(thread_rp__client_stack, APP_SC_TASK_STACK_SIZE);
@@ -429,14 +429,14 @@ void app_rpmsg_client_sample(void *arg1, void *arg2, void *arg3)
 	total_cycles = timing_cycles_get(&start_time, &end_time);
 	total_ns = timing_cycles_to_ns(total_cycles);
 
-	rpmsg_destroy_ept(&sc_ept);
-
 	printk("OpenAMP Linux sample client responder ended\n");
 
 	printk("\n------ RESULTS: rpmsg-client-sample ------\n");
 	printk("Total messages received: %d\n", msg_cnt);
 	printk("Total time: %lld ms\n", total_ns / 1000000);
 	printk("Total send time: %lld ms\n", total_send_ns / 1000000);
+
+	rpmsg_destroy_ept(&sc_ept);
 }
 
 void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
@@ -594,13 +594,13 @@ int main(void)
 		k_thread_create(&thread_netlink_data, thread_netlink_stack, APP_TTY_TASK_STACK_SIZE,
 				app_rpmsg_netlink, NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
-	k_tid_t nocopy = k_thread_create(&thread_nocopy_data, thread_nocopy_stack,
-					 APP_SC_TASK_STACK_SIZE, app_rpmsg_send_nocopy, NULL, NULL,
-					 NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	// k_tid_t nocopy = k_thread_create(&thread_nocopy_data, thread_nocopy_stack,
+	// 				 APP_SC_TASK_STACK_SIZE, app_rpmsg_send_nocopy, NULL, NULL,
+	// 				 NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	k_thread_name_set(mng, "manager");
 	k_thread_name_set(rpmsg_sc, "rpmsg-client-sample");
-	k_thread_name_set(nocopy, "rpmsg-nocopy");
+	// k_thread_name_set(nocopy, "rpmsg-nocopy");
 	k_thread_name_set(tty, "rpmsg-tty");
 	k_thread_name_set(netlink, "rpmsg-netlink");
 	return 0;
