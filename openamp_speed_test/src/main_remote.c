@@ -40,10 +40,9 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_INF);
 
 #define APP_MNG_TASK_STACK_SIZE (1024)
 #define APP_SC_TASK_STACK_SIZE  (1024)
-#define APP_TTY_TASK_STACK_SIZE (1024)
+#define APP_TTY_TASK_STACK_SIZE (2048)
 
-#define MESSAGE_SIZE 4
-#define NUM_MESSAGES 5000
+#define MESSAGE_SIZE 2048 - 16
 
 K_THREAD_STACK_DEFINE(thread_mng_stack, APP_MNG_TASK_STACK_SIZE);
 K_THREAD_STACK_DEFINE(thread_rp__client_stack, APP_SC_TASK_STACK_SIZE);
@@ -340,17 +339,64 @@ failed:
 	return NULL;
 }
 
+struct test_data {
+	struct rpmsg_endpoint *ept;
+	struct k_sem *data_sem;
+	struct rpmsg_rcv_msg *msg;
+	timing_t start_time;
+	timing_t end_time;
+	int msg_cnt;
+	int send_nocopy;
+};
+
+void print_results(struct test_data *data)
+{
+	uint64_t total_cycles, total_ns;
+
+	total_cycles = timing_cycles_get(&data->start_time, &data->end_time);
+	total_ns = timing_cycles_to_ns(total_cycles);
+
+	printk("[%s] Test results \n", data->ept->name);
+	printk("[%s] Total messages received: %d\n", data->ept->name, data->msg_cnt);
+	printk("[%s] Total time: %lld [us]\n", data->ept->name, total_ns / 1000);
+}
+
+void process_test_message(struct test_data *data)
+{
+	k_sem_take(data->data_sem, K_FOREVER);
+
+	if (data->msg->len) {
+		if (strncmp(data->msg->data, "init", 4) == 0) {
+			printk("[%s] Test started\n", data->ept->name);
+			data->start_time = timing_counter_get();
+			data->msg_cnt = 0;
+			return;
+		}
+
+		if (strncmp(data->msg->data, "end", 3) == 0) {
+			data->end_time = timing_counter_get();
+			print_results(data);
+			return;
+		}
+
+		// printk("[%s] Received message: %s\n", data->ept->name, (char *)data->msg->data);
+
+		if (data->send_nocopy) {
+			rpmsg_send_nocopy(data->ept, data->msg->data, data->msg->len);
+		} else {
+			rpmsg_send(data->ept, data->msg->data, data->msg->len);
+		}
+		data->msg_cnt++;
+	}
+	data->msg->len = 0;
+}
+
 void app_rpmsg_send_nocopy(void *arg1, void *arg2, void *arg3)
 {
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	timing_t start_time, end_time;
-	timing_t start_send_time, end_send_time;
-	uint64_t total_cycles, total_ns;
-	uint64_t total_send_cycles, total_send_ns;
-	unsigned int msg_cnt = 0;
 	int ret = 0;
 
 	k_sem_take(&data_nocopy_sem, K_FOREVER);
@@ -359,34 +405,19 @@ void app_rpmsg_send_nocopy(void *arg1, void *arg2, void *arg3)
 
 	ret = rpmsg_create_ept(&nocopy_ept, rpdev, "rpmsg-nocopy", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
 			       rpmsg_recv_nocopy_callback, NULL);
-	total_send_cycles = 0;
 
-	while (msg_cnt < NUM_MESSAGES) {
-		k_sem_take(&data_nocopy_sem, K_FOREVER);
-		if (msg_cnt == 0) {
-			start_time = timing_counter_get();
-		}
-		msg_cnt++;
-		start_send_time = timing_counter_get();
-		rpmsg_send_nocopy(&nocopy_ept, nocopy_msg.data, nocopy_msg.len);
-		end_send_time = timing_counter_get();
-		total_send_cycles += timing_cycles_get(&start_send_time, &end_send_time);
+	struct test_data data = {
+		.ept = &nocopy_ept,
+		.data_sem = &data_nocopy_sem,
+		.msg = &nocopy_msg,
+		.send_nocopy = 1,
+	};
+
+	while (nocopy_ept.addr != RPMSG_ADDR_ANY) {
+		process_test_message(&data);
 	}
 
-	total_send_ns = timing_cycles_to_ns(total_send_cycles);
-
-	end_time = timing_counter_get();
-	total_cycles = timing_cycles_get(&start_time, &end_time);
-	total_ns = timing_cycles_to_ns(total_cycles);
-
 	rpmsg_destroy_ept(&nocopy_ept);
-
-	printk("OpenAMP Linux nocopy send client responder ended\n");
-
-	printk("\n------ RESULTS: rpmsg-nocopy ------\n");
-	printk("Total messages received: %d\n", msg_cnt);
-	printk("Total time: %lld ms\n", total_ns / 1000000);
-	printk("Total send time: %lld ms\n", total_send_ns / 1000000);
 }
 
 void app_rpmsg_client_sample(void *arg1, void *arg2, void *arg3)
@@ -395,11 +426,6 @@ void app_rpmsg_client_sample(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	timing_t start_time, end_time;
-	timing_t start_send_time, end_send_time;
-	uint64_t total_cycles, total_ns;
-	uint64_t total_send_cycles, total_send_ns;
-	unsigned int msg_cnt = 0;
 	int ret = 0;
 
 	k_sem_take(&data_sc_sem, K_FOREVER);
@@ -409,32 +435,16 @@ void app_rpmsg_client_sample(void *arg1, void *arg2, void *arg3)
 	ret = rpmsg_create_ept(&sc_ept, rpdev, "rpmsg-client-sample", RPMSG_ADDR_ANY,
 			       RPMSG_ADDR_ANY, rpmsg_recv_cs_callback, NULL);
 
-	total_send_cycles = 0;
-	while (msg_cnt < NUM_MESSAGES) {
-		k_sem_take(&data_sc_sem, K_FOREVER);
-		if (msg_cnt == 0) {
-			start_time = timing_counter_get();
-		}
-		msg_cnt++;
-		start_send_time = timing_counter_get();
+	struct test_data data = {
+		.ept = &sc_ept,
+		.data_sem = &data_sc_sem,
+		.msg = &sc_msg,
+		.send_nocopy = 0,
+	};
 
-		rpmsg_send(&sc_ept, sc_msg.data, sc_msg.len);
-
-		end_send_time = timing_counter_get();
-		total_send_cycles += timing_cycles_get(&start_send_time, &end_send_time);
+	while (sc_ept.addr != RPMSG_ADDR_ANY) {
+		process_test_message(&data);
 	}
-
-	total_send_ns = timing_cycles_to_ns(total_send_cycles);
-	end_time = timing_counter_get();
-	total_cycles = timing_cycles_get(&start_time, &end_time);
-	total_ns = timing_cycles_to_ns(total_cycles);
-
-	printk("OpenAMP Linux sample client responder ended\n");
-
-	printk("\n------ RESULTS: rpmsg-client-sample ------\n");
-	printk("Total messages received: %d\n", msg_cnt);
-	printk("Total time: %lld ms\n", total_ns / 1000000);
-	printk("Total send time: %lld ms\n", total_send_ns / 1000000);
 
 	rpmsg_destroy_ept(&sc_ept);
 }
@@ -445,11 +455,7 @@ void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	unsigned char tx_buff[MESSAGE_SIZE];
-	int ret = 0;
-	int msg_cnt = 0;
-	timing_t start_time, end_time;
-	uint64_t total_cycles, total_ns;
+	int ret;
 
 	k_sem_take(&data_tty_sem, K_FOREVER);
 
@@ -459,25 +465,17 @@ void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
 	ret = rpmsg_create_ept(&tty_ept, rpdev, "rpmsg-tty", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
 			       rpmsg_recv_tty_callback, NULL);
 
+	struct test_data data = {
+		.ept = &tty_ept,
+		.data_sem = &data_tty_sem,
+		.msg = &tty_msg,
+		.send_nocopy = 0,
+	};
+
 	while (tty_ept.addr != RPMSG_ADDR_ANY) {
-		k_sem_take(&data_tty_sem, K_FOREVER);
-		if (tty_msg.len) {
-			memcpy(tx_buff, tty_msg.data, tty_msg.len);
-			rpmsg_send(&tty_ept, tx_buff, sizeof(tx_buff));
-			rpmsg_release_rx_buffer(&tty_ept, tty_msg.data);
-
-			if (msg_cnt == 0) {
-				start_time = timing_counter_get();
-			}
-		}
-		tty_msg.len = 0;
-		tty_msg.data = NULL;
-		msg_cnt++;
+		process_test_message(&data);
+		rpmsg_release_rx_buffer(&tty_ept, tty_msg.data);
 	}
-
-	end_time = timing_counter_get();
-	total_cycles = timing_cycles_get(&start_time, &end_time);
-	total_ns = timing_cycles_to_ns(total_cycles);
 
 	rpmsg_destroy_ept(&tty_ept);
 }
@@ -488,11 +486,7 @@ void app_rpmsg_netlink(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	unsigned char tx_buff[MESSAGE_SIZE];
 	int ret = 0;
-	int msg_cnt = 0;
-	timing_t start_time, end_time;
-	uint64_t total_cycles, total_ns;
 
 	k_sem_take(&data_netlink_sem, K_FOREVER);
 
@@ -502,25 +496,17 @@ void app_rpmsg_netlink(void *arg1, void *arg2, void *arg3)
 	ret = rpmsg_create_ept(&netlink_ept, rpdev, "rpmsg-netlink", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
 			       rpmsg_recv_netlink_callback, NULL);
 
+	struct test_data data = {
+		.ept = &netlink_ept,
+		.data_sem = &data_netlink_sem,
+		.msg = &netlink_msg,
+		.send_nocopy = 0,
+	};
+
 	while (netlink_ept.addr != RPMSG_ADDR_ANY) {
-		k_sem_take(&data_netlink_sem, K_FOREVER);
-		if (netlink_msg.len) {
-			memcpy(tx_buff, netlink_msg.data, netlink_msg.len);
-			rpmsg_send(&netlink_ept, tx_buff, sizeof(tx_buff));
-			rpmsg_release_rx_buffer(&netlink_ept, netlink_msg.data);
-
-			if (msg_cnt == 0) {
-				start_time = timing_counter_get();
-			}
-		}
-		netlink_msg.len = 0;
-		netlink_msg.data = NULL;
-		msg_cnt++;
+		process_test_message(&data);
+		rpmsg_release_rx_buffer(&netlink_ept, netlink_msg.data);
 	}
-
-	end_time = timing_counter_get();
-	total_cycles = timing_cycles_get(&start_time, &end_time);
-	total_ns = timing_cycles_to_ns(total_cycles);
 
 	rpmsg_destroy_ept(&netlink_ept);
 }
@@ -595,8 +581,8 @@ int main(void)
 				app_rpmsg_netlink, NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	// k_tid_t nocopy = k_thread_create(&thread_nocopy_data, thread_nocopy_stack,
-	// 				 APP_SC_TASK_STACK_SIZE, app_rpmsg_send_nocopy, NULL, NULL,
-	// 				 NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	// APP_SC_TASK_STACK_SIZE, app_rpmsg_send_nocopy, NULL, NULL,
+	// NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	k_thread_name_set(mng, "manager");
 	k_thread_name_set(rpmsg_sc, "rpmsg-client-sample");
