@@ -33,6 +33,10 @@ void setup(void);
  */
 void loop(void);
 
+/* Run inference on the data provided.
+ */
+float infer(float x);
+
 #ifdef __cplusplus
 }
 #endif

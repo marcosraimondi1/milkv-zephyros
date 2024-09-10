@@ -26,16 +26,17 @@
 #include <tensorflow/lite/schema/schema_generated.h>
 
 /* Globals, used for compatibility with Arduino-style sketches. */
-namespace {
-	const tflite::Model *model = nullptr;
-	tflite::MicroInterpreter *interpreter = nullptr;
-	TfLiteTensor *input = nullptr;
-	TfLiteTensor *output = nullptr;
-	int inference_count = 0;
+namespace
+{
+const tflite::Model *model = nullptr;
+tflite::MicroInterpreter *interpreter = nullptr;
+TfLiteTensor *input = nullptr;
+TfLiteTensor *output = nullptr;
+int inference_count = 0;
 
-	constexpr int kTensorArenaSize = 2000;
-	uint8_t tensor_arena[kTensorArenaSize];
-}  /* namespace */
+constexpr int kTensorArenaSize = 2000;
+uint8_t tensor_arena[kTensorArenaSize];
+} /* namespace */
 
 /* The name of this function is important for Arduino compatibility. */
 void setup(void)
@@ -46,20 +47,20 @@ void setup(void)
 	model = tflite::GetModel(g_model);
 	if (model->version() != TFLITE_SCHEMA_VERSION) {
 		MicroPrintf("Model provided is schema version %d not equal "
-					"to supported version %d.",
-					model->version(), TFLITE_SCHEMA_VERSION);
+			    "to supported version %d.",
+			    model->version(), TFLITE_SCHEMA_VERSION);
 		return;
 	}
 
 	/* This pulls in the operation implementations we need.
 	 * NOLINTNEXTLINE(runtime-global-variables)
 	 */
-	static tflite::MicroMutableOpResolver <1> resolver;
+	static tflite::MicroMutableOpResolver<1> resolver;
 	resolver.AddFullyConnected();
 
 	/* Build an interpreter to run the model with. */
-	static tflite::MicroInterpreter static_interpreter(
-		model, resolver, tensor_arena, kTensorArenaSize);
+	static tflite::MicroInterpreter static_interpreter(model, resolver, tensor_arena,
+							   kTensorArenaSize);
 	interpreter = &static_interpreter;
 
 	/* Allocate memory from the tensor_arena for the model's tensors. */
@@ -85,26 +86,11 @@ void loop(void)
 	 * our position within the range of possible x values the model was
 	 * trained on, and use this to calculate a value.
 	 */
-	float position = static_cast < float > (inference_count) /
-			 static_cast < float > (kInferencesPerCycle);
+	float position =
+		static_cast<float>(inference_count) / static_cast<float>(kInferencesPerCycle);
 	float x = position * kXrange;
 
-	/* Quantize the input from floating-point to integer */
-	int8_t x_quantized = x / input->params.scale + input->params.zero_point;
-	/* Place the quantized input in the model's input tensor */
-	input->data.int8[0] = x_quantized;
-
-	/* Run inference, and report any error */
-	TfLiteStatus invoke_status = interpreter->Invoke();
-	if (invoke_status != kTfLiteOk) {
-		MicroPrintf("Invoke failed on x: %f\n", static_cast < double > (x));
-		return;
-	}
-
-	/* Obtain the quantized output from model's output tensor */
-	int8_t y_quantized = output->data.int8[0];
-	/* Dequantize the output from integer to floating-point */
-	float y = (y_quantized - output->params.zero_point) * output->params.scale;
+	float y = infer(x);
 
 	/* Output the results. A custom HandleOutput function can be implemented
 	 * for each supported hardware target.
@@ -115,5 +101,29 @@ void loop(void)
 	 * the total number per cycle
 	 */
 	inference_count += 1;
-	if (inference_count >= kInferencesPerCycle) inference_count = 0;
+	if (inference_count >= kInferencesPerCycle) {
+		inference_count = 0;
+	}
+}
+
+float infer(float x)
+{
+	/* Quantize the input from floating-point to integer */
+	int8_t x_quantized = x / input->params.scale + input->params.zero_point;
+	/* Place the quantized input in the model's input tensor */
+	input->data.int8[0] = x_quantized;
+
+	/* Run inference, and report any error */
+	TfLiteStatus invoke_status = interpreter->Invoke();
+	if (invoke_status != kTfLiteOk) {
+		MicroPrintf("Invoke failed on x: %f\n", static_cast<double>(x));
+		return -1;
+	}
+
+	/* Obtain the quantized output from model's output tensor */
+	int8_t y_quantized = output->data.int8[0];
+	/* Dequantize the output from integer to floating-point */
+	float y = (y_quantized - output->params.zero_point) * output->params.scale;
+
+	return y;
 }

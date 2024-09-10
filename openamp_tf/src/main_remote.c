@@ -273,32 +273,24 @@ struct test_data {
 	struct rpmsg_endpoint *ept;
 	struct k_sem *data_sem;
 	struct rpmsg_rcv_msg *msg;
-	timing_t start_time;
-	timing_t end_time;
-	int msg_cnt;
-	int send_nocopy;
 };
 
-void print_results(struct test_data *data)
-{
-	uint64_t total_cycles, total_ns;
-
-	total_cycles = timing_cycles_get(&data->start_time, &data->end_time);
-	total_ns = timing_cycles_to_ns(total_cycles);
-
-	printk("[%s] Test results \n", data->ept->name);
-	printk("[%s] Total messages received: %d\n", data->ept->name, data->msg_cnt);
-	printk("[%s] Total time: %lld [us]\n", data->ept->name, total_ns / 1000);
-}
-
-void process_test_message(struct test_data *data)
+void process_message(struct test_data *data)
 {
 	k_sem_take(data->data_sem, K_FOREVER);
 
 	if (data->msg->len) {
-		loop();
+		float *input = (float *)data->msg->data;
+		for (int i = 0; i < data->msg->len / sizeof(float); i++) {
+			float x = input[i];
+			float y = infer(x);
+
+			printk("x: %f, y: %f\n", x, y);
+
+			input[i] = y;
+		}
+
 		rpmsg_send(data->ept, data->msg->data, data->msg->len);
-		data->msg_cnt++;
 	}
 	data->msg->len = 0;
 }
@@ -323,11 +315,10 @@ void app_rpmsg_netlink(void *arg1, void *arg2, void *arg3)
 		.ept = &netlink_ept,
 		.data_sem = &data_netlink_sem,
 		.msg = &netlink_msg,
-		.send_nocopy = 0,
 	};
 
 	while (netlink_ept.addr != RPMSG_ADDR_ANY) {
-		process_test_message(&data);
+		process_message(&data);
 		rpmsg_release_rx_buffer(&netlink_ept, netlink_msg.data);
 	}
 
