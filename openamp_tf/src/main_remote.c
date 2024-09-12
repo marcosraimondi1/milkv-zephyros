@@ -6,11 +6,11 @@
 
 #include "openamp/rpmsg.h"
 #include "main_functions.h"
+#include "tictactoe.h"
 
 #include <zephyr/sys/printk.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/timing/timing.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,17 +39,6 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_INF);
 #define SHM_NODE       DT_CHOSEN(zephyr_ipc_shm)
 #define SHM_START_ADDR DT_REG_ADDR(SHM_NODE)
 #define SHM_SIZE       DT_REG_SIZE(SHM_NODE)
-
-#define APP_MNG_TASK_STACK_SIZE   (1024)
-#define APP_RPMSG_TASK_STACK_SIZE (2048)
-
-#define MESSAGE_SIZE 2048 - 16
-
-K_THREAD_STACK_DEFINE(thread_mng_stack, APP_MNG_TASK_STACK_SIZE);
-K_THREAD_STACK_DEFINE(thread_netlink_stack, APP_RPMSG_TASK_STACK_SIZE);
-
-static struct k_thread thread_mng_data;
-static struct k_thread thread_netlink_data;
 
 static const struct device *const ipm_handle = DEVICE_DT_GET(DT_CHOSEN(zephyr_ipc));
 
@@ -80,11 +69,19 @@ static struct rpmsg_virtio_device rvdev;
 static void *rsc_table;
 static struct rpmsg_device *rpdev;
 
-static struct rpmsg_endpoint netlink_ept;
-static struct rpmsg_rcv_msg netlink_msg;
-
 static K_SEM_DEFINE(data_sem, 0, 1);
-static K_SEM_DEFINE(data_netlink_sem, 0, 1);
+
+// app specific variables
+#define APP_RPMSG_TASK_STACK_SIZE (2048)
+static K_SEM_DEFINE(data_app_sem, 0, 1);
+K_THREAD_STACK_DEFINE(thread_netlink_stack, APP_RPMSG_TASK_STACK_SIZE);
+
+#define APP_TTT_TASK_STACK_SIZE (4096)
+static K_SEM_DEFINE(data_ttt_sem, 0, 1);
+K_THREAD_STACK_DEFINE(thread_ttt_stack, APP_TTT_TASK_STACK_SIZE);
+
+#define APP_MNG_TASK_STACK_SIZE (1024)
+K_THREAD_STACK_DEFINE(thread_mng_stack, APP_MNG_TASK_STACK_SIZE);
 
 static void platform_ipm_callback(const struct device *dev, void *context, uint32_t id,
 				  volatile void *data)
@@ -95,6 +92,19 @@ static void platform_ipm_callback(const struct device *dev, void *context, uint3
 	}
 }
 
+static int rpmsg_recv_ttt_callback(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src,
+				   void *priv)
+{
+	struct rpmsg_rcv_msg *msg = priv;
+
+	rpmsg_hold_rx_buffer(ept, data);
+	msg->data = data;
+	msg->len = len;
+	k_sem_give(&data_ttt_sem);
+
+	return RPMSG_SUCCESS;
+}
+
 static int rpmsg_recv_netlink_callback(struct rpmsg_endpoint *ept, void *data, size_t len,
 				       uint32_t src, void *priv)
 {
@@ -103,7 +113,7 @@ static int rpmsg_recv_netlink_callback(struct rpmsg_endpoint *ept, void *data, s
 	rpmsg_hold_rx_buffer(ept, data);
 	msg->data = data;
 	msg->len = len;
-	k_sem_give(&data_netlink_sem);
+	k_sem_give(&data_app_sem);
 
 	return RPMSG_SUCCESS;
 }
@@ -180,7 +190,7 @@ int platform_init(void)
 	}
 
 	/* declare resource table region */
-	rsc_table_get(&rsc_tab_addr, &rsc_size);
+	rsc_table_get((struct fw_resource_table **)&rsc_tab_addr, &rsc_size);
 	rsc_table = (struct st_resource_table *)rsc_tab_addr;
 
 	metal_io_init(&device->regions[1], rsc_table, (metal_phys_addr_t *)rsc_table, rsc_size, -1,
@@ -269,60 +279,110 @@ failed:
 	return NULL;
 }
 
-struct test_data {
-	struct rpmsg_endpoint *ept;
-	struct k_sem *data_sem;
-	struct rpmsg_rcv_msg *msg;
-};
-
-void process_message(struct test_data *data)
-{
-	k_sem_take(data->data_sem, K_FOREVER);
-
-	if (data->msg->len) {
-		float *input = (float *)data->msg->data;
-		for (int i = 0; i < data->msg->len / sizeof(float); i++) {
-			float x = input[i];
-			float y = infer(x);
-
-			printk("x: %f, y: %f\n", x, y);
-
-			input[i] = y;
-		}
-
-		rpmsg_send(data->ept, data->msg->data, data->msg->len);
-	}
-	data->msg->len = 0;
-}
-
-void app_rpmsg_netlink(void *arg1, void *arg2, void *arg3)
+void ttt(void *arg1, void *arg2, void *arg3)
 {
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
+	static struct rpmsg_endpoint ept;
+	static struct rpmsg_rcv_msg msg;
+
 	int ret = 0;
 
-	k_sem_take(&data_netlink_sem, K_FOREVER);
+	k_sem_take(&data_ttt_sem, K_FOREVER);
+
+	printk("\r\nOpenAMP[remote] Linux tic tac toe player started\r\n");
+
+	ept.priv = &msg;
+	ret = rpmsg_create_ept(&ept, rpdev, "rpmsg-ttt", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
+			       rpmsg_recv_ttt_callback, NULL);
+
+	while (ept.addr != RPMSG_ADDR_ANY) {
+		k_sem_take(&data_ttt_sem, K_FOREVER);
+
+		if (msg.len >= 9) {
+			// receive board current state
+			char *input = (char *)msg.data; // 9 bytes
+			char board[3][3];
+
+			for (int i = 0; i < 3; i++) {
+				for (int j = 0; j < 3; j++) {
+					board[i][j] = input[i * 3 + j];
+				}
+			}
+
+			// determine the best move
+			struct action best_move;
+			minimax(board, &best_move);
+
+			if (best_move.row == -1) {
+				// game over
+				rpmsg_send(&ept, msg.data, msg.len);
+				continue;
+			}
+
+			// make move
+			board[best_move.row][best_move.col] = player(board);
+
+			// copy board to msg
+			for (int i = 0; i < 3; i++) {
+				for (int j = 0; j < 3; j++) {
+					input[i * 3 + j] = board[i][j];
+				}
+			}
+			rpmsg_send(&ept, msg.data, msg.len);
+		}
+
+		msg.len = 0;
+		rpmsg_release_rx_buffer(&ept, msg.data);
+	}
+
+	rpmsg_destroy_ept(&ept);
+}
+
+void app(void *arg1, void *arg2, void *arg3)
+{
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	static struct rpmsg_endpoint ept;
+	static struct rpmsg_rcv_msg msg;
+
+	int ret = 0;
+
+	// initialize tensorflow
+	setup();
+
+	k_sem_take(&data_app_sem, K_FOREVER);
 
 	printk("\r\nOpenAMP[remote] Linux Netlink responder started\r\n");
 
-	netlink_ept.priv = &netlink_msg;
-	ret = rpmsg_create_ept(&netlink_ept, rpdev, "rpmsg-netlink", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
+	ept.priv = &msg;
+	ret = rpmsg_create_ept(&ept, rpdev, "rpmsg-netlink", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
 			       rpmsg_recv_netlink_callback, NULL);
 
-	struct test_data data = {
-		.ept = &netlink_ept,
-		.data_sem = &data_netlink_sem,
-		.msg = &netlink_msg,
-	};
+	while (ept.addr != RPMSG_ADDR_ANY) {
+		k_sem_take(&data_app_sem, K_FOREVER);
 
-	while (netlink_ept.addr != RPMSG_ADDR_ANY) {
-		process_message(&data);
-		rpmsg_release_rx_buffer(&netlink_ept, netlink_msg.data);
+		if (msg.len) {
+			// process app data
+			float *input = (float *)msg.data;
+			for (int i = 0; i < msg.len / sizeof(float); i++) {
+				float x = input[i];
+				float y = infer(x);
+				input[i] = y;
+			}
+
+			rpmsg_send(&ept, msg.data, msg.len);
+		}
+
+		msg.len = 0;
+		rpmsg_release_rx_buffer(&ept, msg.data);
 	}
 
-	rpmsg_destroy_ept(&netlink_ept);
+	rpmsg_destroy_ept(&ept);
 }
 
 void rpmsg_mng_task(void *arg1, void *arg2, void *arg3)
@@ -334,13 +394,6 @@ void rpmsg_mng_task(void *arg1, void *arg2, void *arg3)
 	unsigned char *msg;
 	unsigned int len;
 	int ret = 0;
-
-	// init tensorflow
-	setup();
-
-	// init timing
-	timing_init();
-	timing_start();
 
 	printk("\r\nOpenAMP[remote] Linux responder demo started\r\n");
 
@@ -362,10 +415,10 @@ void rpmsg_mng_task(void *arg1, void *arg2, void *arg3)
 	}
 
 	printk("RPMSG tx buffer size: %d\n", rpmsg_virtio_get_tx_buffer_size(rpdev));
-	printk("RPMSG rx buffer size: %d\n", rpmsg_virtio_get_rx_buffer_size(rpdev));
 
 	/* start the rpmsg clients */
-	k_sem_give(&data_netlink_sem);
+	k_sem_give(&data_app_sem);
+	k_sem_give(&data_ttt_sem);
 
 	while (1) {
 		receive_message(&msg, &len);
@@ -380,15 +433,26 @@ task_end:
 int main(void)
 {
 	printk("Starting application threads!\n");
+
+	static struct k_thread thread_app_data;
+	static struct k_thread thread_mng_data;
+	static struct k_thread thread_ttt_data;
+
 	k_tid_t mng =
 		k_thread_create(&thread_mng_data, thread_mng_stack, APP_MNG_TASK_STACK_SIZE,
 				rpmsg_mng_task, NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
 
-	k_tid_t netlink = k_thread_create(&thread_netlink_data, thread_netlink_stack,
-					  APP_RPMSG_TASK_STACK_SIZE, app_rpmsg_netlink, NULL, NULL,
-					  NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	k_tid_t app_thread =
+		k_thread_create(&thread_app_data, thread_netlink_stack, APP_RPMSG_TASK_STACK_SIZE,
+				app, NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+
+	k_tid_t ttt_thread =
+		k_thread_create(&thread_ttt_data, thread_ttt_stack, APP_TTT_TASK_STACK_SIZE, ttt,
+				NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	k_thread_name_set(mng, "manager");
-	k_thread_name_set(netlink, "rpmsg-netlink");
+	k_thread_name_set(app_thread, "sine_prediction");
+	k_thread_name_set(ttt_thread, "ttt");
+
 	return 0;
 }
