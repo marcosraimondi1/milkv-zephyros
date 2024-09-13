@@ -7,10 +7,12 @@
 #include "openamp/rpmsg.h"
 #include "main_functions.h"
 #include "tictactoe.h"
+#include "encoding.h"
 
 #include <zephyr/sys/printk.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -301,38 +303,35 @@ void ttt(void *arg1, void *arg2, void *arg3)
 	while (ept.addr != RPMSG_ADDR_ANY) {
 		k_sem_take(&data_ttt_sem, K_FOREVER);
 
-		if (msg.len >= 9) {
-			// receive board current state
-			char *input = (char *)msg.data; // 9 bytes
-			char board[3][3];
-
-			for (int i = 0; i < 3; i++) {
-				for (int j = 0; j < 3; j++) {
-					board[i][j] = input[i * 3 + j];
-				}
-			}
-
-			// determine the best move
-			struct action best_move;
-			minimax(board, &best_move);
-
-			if (best_move.row == -1) {
-				// game over
-				rpmsg_send(&ept, msg.data, msg.len);
-				continue;
-			}
-
-			// make move
-			board[best_move.row][best_move.col] = player(board);
-
-			// copy board to msg
-			for (int i = 0; i < 3; i++) {
-				for (int j = 0; j < 3; j++) {
-					input[i * 3 + j] = board[i][j];
-				}
-			}
-			rpmsg_send(&ept, msg.data, msg.len);
+		char board[3][3];
+		ret = decode_board(board, (uint8_t *)msg.data);
+		if (ret < 0) {
+			printk("Decoding failed\n");
+			continue;
 		}
+
+		// determine the best move
+		struct action best_move;
+		minimax(board, &best_move);
+
+		if (best_move.row == -1) {
+			// game over
+			rpmsg_send(&ept, msg.data, msg.len);
+			continue;
+		}
+
+		// make move
+		board[best_move.row][best_move.col] = player(board);
+
+		// encode board
+		ret = encode_board(board, (uint8_t *)msg.data, msg.len);
+
+		if (ret < 0) {
+			printk("Encoding failed\n");
+			continue;
+		}
+
+		rpmsg_send(&ept, msg.data, ret);
 
 		msg.len = 0;
 		rpmsg_release_rx_buffer(&ept, msg.data);

@@ -1,0 +1,6 @@
+syntax = "proto2";
+
+message SimpleMessage
+{
+	repeated int32 board = 1;
+}

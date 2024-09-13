@@ -25,4 +25,5 @@ manifest:
         name-allowlist:
           - open-amp
           - libmetal
+          - nanopb
           - tflite-micro
