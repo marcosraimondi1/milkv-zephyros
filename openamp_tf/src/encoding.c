@@ -2,25 +2,47 @@
 #include "src/message.pb.h"
 #include <zephyr/kernel.h>
 
+Board_Mark get_mark(char mark)
+{
+	switch (mark) {
+	case 'X':
+		return Board_Mark_MARK_X;
+	case 'O':
+		return Board_Mark_MARK_O;
+	default:
+		return Board_Mark_MARK_EMPTY;
+	}
+}
+
+char get_mark_char(Board_Mark mark)
+{
+	switch (mark) {
+	case Board_Mark_MARK_X:
+		return 'X';
+	case Board_Mark_MARK_O:
+		return 'O';
+	default:
+		return ' ';
+	}
+}
+
 int encode_board(char board[3][3], uint8_t *buffer, size_t buffer_size)
 {
-	int32_t board_data[9];
+	Board message = Board_init_zero;
+
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++) {
-			board_data[i * 3 + j] = (int32_t)board[i][j];
+			message.rows[i].marks[j] = get_mark(board[i][j]);
 		}
+		message.rows[i].marks_count = 3;
 	}
-
-	SimpleMessage message = SimpleMessage_init_zero;
-	memcpy(message.board, board_data, sizeof(board_data));
-	message.board_count = 9; // Set the actual number of elements
+	message.rows_count = 3;
 
 	// create stream that will write to our buffer
-	pb_ostream_t stream =
-		pb_ostream_from_buffer(buffer + sizeof(size_t), buffer_size - sizeof(size_t));
+	pb_ostream_t stream = pb_ostream_from_buffer(buffer, buffer_size);
 
 	// Encode the message
-	bool status = pb_encode(&stream, SimpleMessage_fields, &message);
+	bool status = pb_encode(&stream, Board_fields, &message);
 	size_t message_length = stream.bytes_written;
 
 	if (!status) {
@@ -28,26 +50,19 @@ int encode_board(char board[3][3], uint8_t *buffer, size_t buffer_size)
 		return ERROR;
 	}
 
-	// Write the message length to the beginning of the buffer
-	memcpy(buffer, &message_length, sizeof(size_t));
-
-	return message_length + sizeof(size_t);
+	return message_length;
 }
 
-int decode_board(char board[3][3], uint8_t *buffer)
+int decode_board(char board[3][3], uint8_t *buffer, size_t message_length)
 {
 	/* Initialize the message structure to zero */
-	SimpleMessage message = SimpleMessage_init_zero;
-
-	// Read the message length
-	size_t message_length;
-	memcpy(&message_length, buffer, sizeof(size_t));
+	Board message = Board_init_zero;
 
 	/* Create a stream that reads from the buffer */
-	pb_istream_t stream = pb_istream_from_buffer(buffer + sizeof(size_t), message_length);
+	pb_istream_t stream = pb_istream_from_buffer(buffer, message_length);
 
 	/* Decode the message */
-	int status = pb_decode(&stream, SimpleMessage_fields, &message);
+	int status = pb_decode(&stream, Board_fields, &message);
 
 	/* Check for decoding errors */
 	if (!status) {
@@ -57,7 +72,7 @@ int decode_board(char board[3][3], uint8_t *buffer)
 
 	for (int i = 0; i < 3; i++) {
 		for (int j = 0; j < 3; j++) {
-			board[i][j] = (char)message.board[i * 3 + j];
+			board[i][j] = get_mark_char(message.rows[i].marks[j]);
 		}
 	}
 

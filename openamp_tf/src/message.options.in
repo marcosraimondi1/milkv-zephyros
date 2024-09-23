@@ -1,1 +1,2 @@
-SimpleMessage.board max_count:10
+Board.rows max_count:3
+Board.Row.marks max_count:3

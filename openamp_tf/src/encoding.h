@@ -8,6 +8,6 @@
 #define SUCCESS 0
 
 int encode_board(char board[3][3], uint8_t *buffer, size_t buffer_size);
-int decode_board(char board[3][3], uint8_t *buffer);
+int decode_board(char board[3][3], uint8_t *buffer, size_t buffer_size);
 
 #endif // !ENCODING_H

@@ -300,11 +300,17 @@ void ttt(void *arg1, void *arg2, void *arg3)
 	ret = rpmsg_create_ept(&ept, rpdev, "rpmsg-ttt", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
 			       rpmsg_recv_ttt_callback, NULL);
 
+	char board[3][3] = {{' '}, {' '}, {' '}};
+
+	uint8_t buffer[128];
+
+	int encoded_size = encode_board(board, buffer, sizeof(buffer));
+	printk("Encoded size: %d\n", encoded_size);
+
 	while (ept.addr != RPMSG_ADDR_ANY) {
 		k_sem_take(&data_ttt_sem, K_FOREVER);
 
-		char board[3][3];
-		ret = decode_board(board, (uint8_t *)msg.data);
+		ret = decode_board(board, (uint8_t *)msg.data, encoded_size);
 		if (ret < 0) {
 			printk("Decoding failed\n");
 			continue;
