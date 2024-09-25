@@ -237,7 +237,7 @@ void minimax(char board[3][3], struct action *best_move)
  */
 void draw(char board[3][3])
 {
-	printf("\033[H\033[J"); // clear screen
+	// printf("\033[H\033[J"); // clear screen
 	printf("\t0\t1\t2\n\n");
 	for (int i = 0; i < 3; i++) {
 		printf("%d", i);

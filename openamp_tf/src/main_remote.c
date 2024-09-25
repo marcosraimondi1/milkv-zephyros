@@ -294,7 +294,7 @@ void ttt(void *arg1, void *arg2, void *arg3)
 
 	k_sem_take(&data_ttt_sem, K_FOREVER);
 
-	printk("\r\nOpenAMP[remote] Linux tic tac toe player started\r\n");
+	printk("\r\nOpenAMP[remote] rpmsg-ttt tictactoe player started\r\n");
 
 	ept.priv = &msg;
 	ret = rpmsg_create_ept(&ept, rpdev, "rpmsg-ttt", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
@@ -302,15 +302,10 @@ void ttt(void *arg1, void *arg2, void *arg3)
 
 	char board[3][3] = {{' '}, {' '}, {' '}};
 
-	uint8_t buffer[128];
-
-	int encoded_size = encode_board(board, buffer, sizeof(buffer));
-	printk("Encoded size: %d\n", encoded_size);
-
 	while (ept.addr != RPMSG_ADDR_ANY) {
 		k_sem_take(&data_ttt_sem, K_FOREVER);
 
-		ret = decode_board(board, (uint8_t *)msg.data, encoded_size);
+		ret = decode_board(board, (uint8_t *)msg.data, msg.len);
 		if (ret < 0) {
 			printk("Decoding failed\n");
 			continue;
@@ -328,6 +323,8 @@ void ttt(void *arg1, void *arg2, void *arg3)
 
 		// make move
 		board[best_move.row][best_move.col] = player(board);
+
+		draw(board);
 
 		// encode board
 		ret = encode_board(board, (uint8_t *)msg.data, msg.len);
@@ -362,10 +359,10 @@ void app(void *arg1, void *arg2, void *arg3)
 
 	k_sem_take(&data_app_sem, K_FOREVER);
 
-	printk("\r\nOpenAMP[remote] Linux Netlink responder started\r\n");
+	printk("\r\nOpenAMP[remote] rpmsg-tflite tensorflow sine predictor started\r\n");
 
 	ept.priv = &msg;
-	ret = rpmsg_create_ept(&ept, rpdev, "rpmsg-netlink", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
+	ret = rpmsg_create_ept(&ept, rpdev, "rpmsg-tflite", RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
 			       rpmsg_recv_netlink_callback, NULL);
 
 	while (ept.addr != RPMSG_ADDR_ANY) {
@@ -400,7 +397,7 @@ void rpmsg_mng_task(void *arg1, void *arg2, void *arg3)
 	unsigned int len;
 	int ret = 0;
 
-	printk("\r\nOpenAMP[remote] Linux responder demo started\r\n");
+	printk("\r\nOpenAMP[remote] application started\r\n");
 
 	/* Initialize platform */
 	ret = platform_init();
@@ -456,7 +453,7 @@ int main(void)
 				NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	k_thread_name_set(mng, "manager");
-	k_thread_name_set(app_thread, "sine_prediction");
+	k_thread_name_set(app_thread, "sine_predictor");
 	k_thread_name_set(ttt_thread, "ttt");
 
 	return 0;
