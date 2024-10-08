@@ -1,0 +1,19 @@
+syntax = "proto2";
+
+message KWS_Result
+{
+	message Prediction
+	{
+		required string label = 1;
+		required float value = 2;
+	}
+
+	message Timing
+	{
+		required int32 dsp = 1;
+		required float classification = 2;
+	}
+
+	required Timing timing = 1;
+	repeated Prediction predictions = 2;
+}

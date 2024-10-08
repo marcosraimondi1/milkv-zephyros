@@ -1,0 +1,2 @@
+KWS_Result.predictions max_count:3
+KWS_Result.Prediction.label max_length:32
