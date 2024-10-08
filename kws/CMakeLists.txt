@@ -30,7 +30,7 @@ zephyr_compile_definitions(METAL_MAX_DEVICE_REGIONS=2)
 set(NO_THREADSAFE_STATICS $<TARGET_PROPERTY:compiler-cpp,no_threadsafe_statics>)
 zephyr_compile_options($<$<COMPILE_LANGUAGE:CXX>:${NO_THREADSAFE_STATICS}>)
 
-# zephyr_linker_sources(SECTIONS src/resource_table.ld)
+zephyr_linker_sources(SECTIONS src/resource_table.ld)
 
 target_include_directories(app PRIVATE ${LIBMETAL_INCLUDE_DIR} ${OPENAMP_INCLUDE_DIR} ${PLATFORM_DIR})
 
