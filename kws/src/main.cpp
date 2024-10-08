@@ -56,9 +56,12 @@ static struct rpmsg_device *rpdev;
 
 // ---------------------
 static K_SEM_DEFINE(data_sem, 0, 1);
-#define APP_RPMSG_TASK_STACK_SIZE (2048)
+#define APP_RPMSG_TASK_STACK_SIZE (4080)
 static K_SEM_DEFINE(data_app_sem, 0, 1);
 K_THREAD_STACK_DEFINE(thread_app_stack, APP_RPMSG_TASK_STACK_SIZE);
+
+#define INFERENCE_TASK_STACK_SIZE (4080)
+K_THREAD_STACK_DEFINE(thread_inference_stack, INFERENCE_TASK_STACK_SIZE);
 
 #define APP_MNG_TASK_STACK_SIZE (1024)
 K_THREAD_STACK_DEFINE(thread_mng_stack, APP_MNG_TASK_STACK_SIZE);
@@ -72,12 +75,14 @@ static void platform_ipm_callback(const struct device *dev, void *context, uint3
 	}
 }
 
+static char rx_sc_msg[20]; /* should receive "Hello world!" */
+static struct rpmsg_rcv_msg sc_msg = {.data = rx_sc_msg};
 static int rpmsg_recv_app_callback(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src,
 				   void *priv)
 {
-	rpmsg_hold_rx_buffer(ept, data);
+	memcpy(sc_msg.data, data, len);
+	sc_msg.len = len;
 	k_sem_give(&data_app_sem);
-	rpmsg_release_rx_buffer(ept, data);
 	return RPMSG_SUCCESS;
 }
 
@@ -243,6 +248,34 @@ failed:
 	return NULL;
 }
 
+static K_SEM_DEFINE(inference_ready, 0, 1);
+static K_SEM_DEFINE(inference_read, 1, 1);
+static struct result_t result;
+
+void inference_loop(void *arg1, void *arg2, void *arg3)
+{
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	while (1) {
+		k_sem_take(&inference_read, K_FOREVER);
+
+		// run inference
+		infer(&result);
+
+		printk("Predictions (DSP: %d ms., Classification: %d ms.): \n", result.timing.dsp,
+		       result.timing.classification);
+
+		for (size_t ix = 0; ix < NUM_CATEOGRIES; ix++) {
+			printk("    %s: %f\n", result.predictions[ix].label,
+			       (double)result.predictions[ix].value);
+		}
+
+		k_sem_give(&inference_ready);
+	}
+}
+
 void app(void *arg1, void *arg2, void *arg3)
 {
 	ARG_UNUSED(arg1);
@@ -264,20 +297,9 @@ void app(void *arg1, void *arg2, void *arg3)
 
 	uint8_t buffer[128];
 
+	k_sem_take(&data_app_sem, K_FOREVER);
 	while (ept.addr != RPMSG_ADDR_ANY) {
-		k_sem_take(&data_app_sem, K_FOREVER);
-
-		// run inference
-		struct result_t result;
-		infer(&result);
-
-		printk("Predictions (DSP: %d ms., Classification: %d ms.): \n", result.timing.dsp,
-		       result.timing.classification);
-
-		for (size_t ix = 0; ix < NUM_CATEOGRIES; ix++) {
-			printk("    %s: %f\n", result.predictions[ix].label,
-			       (double)result.predictions[ix].value);
-		}
+		k_sem_take(&inference_ready, K_FOREVER);
 
 		// encode result
 		ret = encode_msg(result, buffer, sizeof(buffer));
@@ -286,6 +308,8 @@ void app(void *arg1, void *arg2, void *arg3)
 			printk("Encoding failed\n");
 			continue;
 		}
+
+		k_sem_give(&inference_read);
 
 		rpmsg_send(&ept, buffer, ret);
 	}
@@ -341,6 +365,7 @@ int main()
 {
 	printk("Starting application threads!\n");
 	static struct k_thread thread_app_data;
+	static struct k_thread thread_inference_data;
 	static struct k_thread thread_mng_data;
 	k_tid_t mng =
 		k_thread_create(&thread_mng_data, thread_mng_stack, APP_MNG_TASK_STACK_SIZE,
@@ -350,6 +375,11 @@ int main()
 		k_thread_create(&thread_app_data, thread_app_stack, APP_RPMSG_TASK_STACK_SIZE, app,
 				NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
+	k_tid_t inference_thread = k_thread_create(&thread_inference_data, thread_inference_stack,
+						   INFERENCE_TASK_STACK_SIZE, inference_loop, NULL,
+						   NULL, NULL, K_PRIO_COOP(6), 0, K_NO_WAIT);
+
 	k_thread_name_set(mng, "manager");
 	k_thread_name_set(app_thread, "kws_app");
+	k_thread_name_set(inference_thread, "inference");
 }
