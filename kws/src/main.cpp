@@ -80,9 +80,8 @@ static struct rpmsg_rcv_msg sc_msg = {.data = rx_sc_msg};
 static int rpmsg_recv_app_callback(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src,
 				   void *priv)
 {
-	memcpy(sc_msg.data, data, len);
-	sc_msg.len = len;
-	k_sem_give(&data_app_sem);
+	printk("Received message of %zu bytes\n", len);
+	printk("Message: %s\n", (char *)data);
 	return RPMSG_SUCCESS;
 }
 
@@ -297,8 +296,13 @@ void app(void *arg1, void *arg2, void *arg3)
 
 	uint8_t buffer[128];
 
-	k_sem_take(&data_app_sem, K_FOREVER);
 	while (ept.addr != RPMSG_ADDR_ANY) {
+		while (is_rpmsg_ept_ready(&ept) == 0) {
+			// ept is ready when master sends at least one message
+			printk("Waiting for ept\n");
+			k_msleep(100);
+		}
+
 		k_sem_take(&inference_ready, K_FOREVER);
 
 		// encode result
@@ -311,7 +315,9 @@ void app(void *arg1, void *arg2, void *arg3)
 
 		k_sem_give(&inference_read);
 
-		rpmsg_send(&ept, buffer, ret);
+		if (rpmsg_send(&ept, buffer, ret) < 0) {
+			printk("Failed to send message\n");
+		}
 	}
 
 	rpmsg_destroy_ept(&ept);
