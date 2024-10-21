@@ -130,8 +130,9 @@ static inline void hal_adc_disable_clk()
 
 static inline void hal_adc_cyc_setting(unsigned long reg_base)
 {
-	ADC_CYC_SET(reg_base) &= ~ADC_CYC_SET_ADC_CYC_CLK_DIV_16;
-	ADC_CYC_SET(reg_base) |= ADC_CYC_SET_ADC_CYC_CLK_DIV_16; // set saradc clock cycle=840ns
+	ADC_CYC_SET(reg_base) &= ~ADC_CYC_SET_ADC_CYC_CLK_DIV_1;
+	ADC_CYC_SET(reg_base) |=
+		ADC_CYC_SET_ADC_CYC_CLK_DIV_1; // set saradc freq = ip_clk / (1+clk_div)
 }
 
 static inline void hal_adc_start(unsigned long reg_base)
