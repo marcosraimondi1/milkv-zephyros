@@ -36,6 +36,7 @@ void timer_stop();
 // variables
 static int16_t count = 0;
 static int16_t values[NSAMPLES] = {0};
+static timing_t start = 0;
 
 // ISR
 static void timer_isr()
@@ -67,7 +68,12 @@ static void timer_isr()
 				// for (int i = 0; i < NSAMPLES; i++) {
 				// 	printk("%d\n", values[i]);
 				// }
+				timing_t end = timing_counter_get();
+				timing_t cycles = timing_cycles_get(&start, &end);
+				uint64_t ns = timing_cycles_to_ns(cycles);
 				printk("ADC Example Finished\n");
+				printk("Time: %lld ms\n", ns / 1000 / 1000);
+				timing_stop();
 				return;
 			}
 			hal_adc_start(ADC_BASE); // start conversion
@@ -101,6 +107,11 @@ int main(void)
 {
 	printk("ADC Example Starting\n");
 	adc_init();
+
+	timing_init();
+	timing_start();
+	start = timing_counter_get();
+
 	timer_init(TIMER_COUNT);
 	irq_config();
 
