@@ -18,7 +18,13 @@
 #define ADC_PIN_MUX_OFFSET 0x0F8
 #define ADC_PIN_FUNC       3U
 
+// devicetree
+#define TIMER_BASE         (uint32_t)DT_REG_ADDR(DT_ALIAS(mytimer))
+#define TIMER_IRQN         DT_IRQN(DT_ALIAS(mytimer))
+#define TIMER_IRQ_PRIORITY DT_IRQ(DT_ALIAS(mytimer), priority)
+
 // constants
+#define TIMER_ID          5
 #define NSAMPLES          16000
 #define TIMER_CLK_FREQ_HZ 25000000
 #define SAMPLING_FREQ_HZ  16000
@@ -32,11 +38,30 @@ int16_t adc_read();
 void adc_stop();
 void timer_init(uint32_t load_count);
 void timer_stop();
+void irq_config();
 
 // variables
 static int16_t count = 0;
 static int16_t values[NSAMPLES] = {0};
 static timing_t start = 0;
+
+int main(void)
+{
+	printk("ADC Example Starting\n");
+	adc_init();
+
+	timing_init();
+	timing_start();
+	start = timing_counter_get();
+
+	timer_init(TIMER_COUNT);
+	irq_config();
+
+	while (1) {
+		k_sleep(K_MSEC(100));
+	}
+	return 0;
+}
 
 // ISR
 static void timer_isr()
@@ -88,43 +113,18 @@ static void timer_isr()
 
 void irq_config(void)
 {
-	// Obtener el numero de interrupcion directamente desde el devicetree
-	const int irq_num = DT_IRQN(DT_ALIAS(mytimer));
-	printk("IRQ number: %d\n", irq_num);
-
-	// Obtener la prioridad de la interrupcion
-	const int irq_priority = DT_IRQ(DT_ALIAS(mytimer), priority);
-	printk("IRQ priority: %d\n", irq_priority);
+	printk("IRQ number: %d\n", TIMER_IRQN);
+	printk("IRQ priority: %d\n", TIMER_IRQ_PRIORITY);
 
 	// Conectar la interrupcion (agrega a la tabla de interrupciones)
-	IRQ_CONNECT(irq_num, irq_priority, timer_isr, NULL, 0);
-
-	// Habilitar la interrupcion
-	irq_enable(irq_num);
-}
-
-int main(void)
-{
-	printk("ADC Example Starting\n");
-	adc_init();
-
-	timing_init();
-	timing_start();
-	start = timing_counter_get();
-
-	timer_init(TIMER_COUNT);
-	irq_config();
-
-	while (1) {
-		k_sleep(K_MSEC(100));
-	}
-	return 0;
+	IRQ_CONNECT(TIMER_IRQN, TIMER_IRQ_PRIORITY, timer_isr, NULL, 0);
+	irq_enable(TIMER_IRQN);
 }
 
 void timer_stop()
 {
 	// disable timer
-	hal_timer_disable_clk();
+	hal_timer_disable_clk(TIMER_ID);
 	TIMER_CTRL(TIMER_BASE) &= ~1;
 }
 
@@ -132,7 +132,8 @@ void timer_init(uint32_t load_count)
 {
 	// peripheral clock is 25MHz, 1s = 25M counts
 	// disable timer
-	hal_timer_disable_clk();
+	printk("TIMER_BASE: %x\n", TIMER_BASE);
+	hal_timer_disable_clk(TIMER_ID);
 	TIMER_CTRL(TIMER_BASE) &= ~1;
 	volatile int32_t a = TIMER_INTR_CLR(TIMER_BASE);
 	ARG_UNUSED(a);
@@ -143,7 +144,7 @@ void timer_init(uint32_t load_count)
 	TIMER_CTRL(TIMER_BASE) |= 1 << 1;    // user-defined mode
 
 	// enable timer
-	hal_timer_enable_clk();
+	hal_timer_enable_clk(TIMER_ID);
 	TIMER_CTRL(TIMER_BASE) |= 1;
 }
 

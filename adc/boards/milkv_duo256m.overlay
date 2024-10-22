@@ -1,12 +1,32 @@
 / {
 	soc {
-		timer5: counter@30a0050 {
+
+		timer5: timer@30a0050 {
 			compatible = "sophgo,cv18xx-timer";
 			reg = <0x30a0050 0x010>;
 			interrupts = <55 1>; 
-			interrupt-parent = <&plic0>;
-			clock-frequency = <0x17d7840>; // 25MHz
 			status = "okay";
+		};
+
+		timer6: timer@30a0064 {
+			compatible = "sophgo,cv18xx-timer";
+			reg = <0x30a0064 0x010>;
+			interrupts = <56 1>; 
+			status = "disabled";
+		};
+
+		timer7: timer@30a0078 {
+			compatible = "sophgo,cv18xx-timer";
+			reg = <0x30a0078 0x010>;
+			interrupts = <57 1>; 
+			status = "disabled";
+		};
+
+		timer8: timer@30a008c {
+			compatible = "sophgo,cv18xx-timer";
+			reg = <0x30a008c 0x010>;
+			interrupts = <58 1>; 
+			status = "disabled";
 		};
 	};
 
