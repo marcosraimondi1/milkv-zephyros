@@ -19,63 +19,102 @@
 #define ADC_PIN_FUNC       3U
 
 // constants
-#define SLEEP_TIME_MS 2
-#define NSAMPLES      16000
-
-// variables
-static int16_t samples[NSAMPLES] = {0};
+#define NSAMPLES          16000
+#define TIMER_CLK_FREQ_HZ 25000000
+#define SAMPLING_FREQ_HZ  16000
+#define TIMER_COUNT       (TIMER_CLK_FREQ_HZ / SAMPLING_FREQ_HZ) - 1
 
 // functions
 void analogReadValues();
 int16_t analogRead();
+void adc_init();
+int16_t adc_read();
+void adc_stop();
 void timer_init(uint32_t load_count);
+void timer_stop();
+
+// variables
+static int16_t count = 0;
+static int16_t values[NSAMPLES] = {0};
 
 // ISR
 static void timer_isr()
 {
+	static bool first = true;
 	if (TIMER_INTR_STA(TIMER_BASE) & 1) {
-		volatile int a = TIMER_INTR_CLR(TIMER_BASE); // clear interrupt
-		ARG_UNUSED(a);
-		printk("Timer interrupted\n");
+		volatile int32_t a = TIMER_INTR_CLR(TIMER_BASE);
+		ARG_UNUSED(a); // clear interrupt
+
+		if (first) {
+			first = false;
+			hal_adc_start(ADC_BASE); // start conversion
+			return;
+		}
+
+		if (hal_adc_get_data_ready(ADC_BASE)) {
+			values[count] = hal_adc_get_channel1_data(ADC_BASE) & 0xFFF;
+
+			if (hal_adc_get_channel1_data_valid(ADC_BASE) == 0) {
+				printk("ADC data is invalid\n");
+				while (1) {
+				}
+			}
+
+			count += 1;
+			if (count >= NSAMPLES) {
+				timer_stop();
+				adc_stop();
+				// for (int i = 0; i < NSAMPLES; i++) {
+				// 	printk("%d\n", values[i]);
+				// }
+				printk("ADC Example Finished\n");
+				return;
+			}
+			hal_adc_start(ADC_BASE); // start conversion
+		} else {
+			printk("ADC data is not ready\n");
+			while (1) {
+			}
+		}
 	}
 	return;
 }
 
 void irq_config(void)
 {
-	// Obtener el número de interrupcion directamente desde el devicetree
+	// Obtener el numero de interrupcion directamente desde el devicetree
 	const int irq_num = DT_IRQN(DT_ALIAS(mytimer));
 	printk("IRQ number: %d\n", irq_num);
 
-	// Obtener la prioridad de la interrupción (si es necesario)
+	// Obtener la prioridad de la interrupcion
 	const int irq_priority = DT_IRQ(DT_ALIAS(mytimer), priority);
 	printk("IRQ priority: %d\n", irq_priority);
 
-	// Conectar la interrupción
+	// Conectar la interrupcion (agrega a la tabla de interrupciones)
 	IRQ_CONNECT(irq_num, irq_priority, timer_isr, NULL, 0);
 
-	// Habilitar la interrupción
+	// Habilitar la interrupcion
 	irq_enable(irq_num);
 }
 
 int main(void)
 {
 	printk("ADC Example Starting\n");
-	timer_init(250000000);
+	adc_init();
+	timer_init(TIMER_COUNT);
 	irq_config();
+
 	while (1) {
-		// analogReadValues();
-		//
-		// for (int i = 0; i < NSAMPLES; i++) {
-		// 	printk("%d \n", samples[i]);
-		// }
-
-		printk("Timer current value %d\n", TIMER_CURRENT_VALUE(TIMER_BASE));
-		printk("Timer interrupt status %d\n", TIMER_INTR_STA(TIMER_BASE) & 1);
-
-		k_sleep(K_MSEC(1000));
+		k_sleep(K_MSEC(100));
 	}
 	return 0;
+}
+
+void timer_stop()
+{
+	// disable timer
+	hal_timer_disable_clk();
+	TIMER_CTRL(TIMER_BASE) &= ~1;
 }
 
 void timer_init(uint32_t load_count)
@@ -84,7 +123,7 @@ void timer_init(uint32_t load_count)
 	// disable timer
 	hal_timer_disable_clk();
 	TIMER_CTRL(TIMER_BASE) &= ~1;
-	volatile uint32_t a = TIMER_INTR_CLR(TIMER_BASE);
+	volatile int32_t a = TIMER_INTR_CLR(TIMER_BASE);
 	ARG_UNUSED(a);
 
 	// config timer
@@ -131,19 +170,6 @@ void adc_stop()
 	hal_adc_reset_sel_channel(ADC_BASE, ADC_CHANNEL_SEL_Msk);
 	hal_adc_stop(ADC_BASE);
 	hal_adc_disable_clk();
-}
-
-void analogReadValues()
-{
-	adc_init();
-
-	for (int i = 0; i < NSAMPLES; i++) {
-		samples[i] = adc_read();
-	}
-
-	adc_stop();
-
-	return;
 }
 
 int16_t analogRead()
