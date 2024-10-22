@@ -10,13 +10,13 @@
 #include "timer.h"
 #include "zephyr/sys/printk.h"
 #include <zephyr/timing/timing.h>
+#include <zephyr/irq.h>
 
 // registers
 #define ADC_BASE           0x030F0000UL
 #define PIN_MUX_BASE       0x03001000UL
 #define ADC_PIN_MUX_OFFSET 0x0F8
 #define ADC_PIN_FUNC       3U
-#define TIMER4_BASE        0x030A003CUL
 
 // constants
 #define SLEEP_TIME_MS 2
@@ -30,10 +30,39 @@ void analogReadValues();
 int16_t analogRead();
 void timer_init(uint32_t load_count);
 
+// ISR
+static void timer_isr()
+{
+	if (TIMER_INTR_STA(TIMER_BASE) & 1) {
+		volatile int a = TIMER_INTR_CLR(TIMER_BASE); // clear interrupt
+		ARG_UNUSED(a);
+		printk("Timer interrupted\n");
+	}
+	return;
+}
+
+void irq_config(void)
+{
+	// Obtener el número de interrupcion directamente desde el devicetree
+	const int irq_num = DT_IRQN(DT_ALIAS(mytimer));
+	printk("IRQ number: %d\n", irq_num);
+
+	// Obtener la prioridad de la interrupción (si es necesario)
+	const int irq_priority = DT_IRQ(DT_ALIAS(mytimer), priority);
+	printk("IRQ priority: %d\n", irq_priority);
+
+	// Conectar la interrupción
+	IRQ_CONNECT(irq_num, irq_priority, timer_isr, NULL, 0);
+
+	// Habilitar la interrupción
+	irq_enable(irq_num);
+}
+
 int main(void)
 {
 	printk("ADC Example Starting\n");
 	timer_init(250000000);
+	irq_config();
 	while (1) {
 		// analogReadValues();
 		//
@@ -41,7 +70,9 @@ int main(void)
 		// 	printk("%d \n", samples[i]);
 		// }
 
-		printk("Timer current value %d\n", TIMER_CURRENT_VALUE(TIMER4_BASE));
+		printk("Timer current value %d\n", TIMER_CURRENT_VALUE(TIMER_BASE));
+		printk("Timer interrupt status %d\n", TIMER_INTR_STA(TIMER_BASE) & 1);
+
 		k_sleep(K_MSEC(1000));
 	}
 	return 0;
@@ -49,18 +80,21 @@ int main(void)
 
 void timer_init(uint32_t load_count)
 {
+	// peripheral clock is 25MHz, 1s = 25M counts
 	// disable timer
-	hal_timer4_disable_clk();
-	TIMER_CTRL(TIMER4_BASE) &= ~1;
+	hal_timer_disable_clk();
+	TIMER_CTRL(TIMER_BASE) &= ~1;
+	volatile uint32_t a = TIMER_INTR_CLR(TIMER_BASE);
+	ARG_UNUSED(a);
 
 	// config timer
-	TIMER_LOAD_COUNT(TIMER4_BASE) = load_count;
-	TIMER_CTRL(TIMER4_BASE) &= ~(1 << 2); // interrupt not masked
-	TIMER_CTRL(TIMER4_BASE) |= 1 << 1;    // user-defined mode
+	TIMER_LOAD_COUNT(TIMER_BASE) = load_count;
+	TIMER_CTRL(TIMER_BASE) &= ~(1 << 2); // interrupt not masked
+	TIMER_CTRL(TIMER_BASE) |= 1 << 1;    // user-defined mode
 
 	// enable timer
-	hal_timer4_enable_clk();
-	TIMER_CTRL(TIMER4_BASE) |= 1;
+	hal_timer_enable_clk();
+	TIMER_CTRL(TIMER_BASE) |= 1;
 }
 
 void adc_init()

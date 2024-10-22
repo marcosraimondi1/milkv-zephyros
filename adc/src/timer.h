@@ -25,17 +25,18 @@ static struct cvi_timer_regs_t *timer_reg = &timer_offsets;
 #define TIMER_CTRL(reg_base)          *((uint32_t *)(reg_base + timer_reg->CTRL))
 #define TIMER_INTR_CLR(reg_base)      *((uint32_t *)(reg_base + timer_reg->INTR_CLR))
 #define TIMER_INTR_STA(reg_base)      *((uint32_t *)(reg_base + timer_reg->INTR_STA))
-#define TIMER_INTERRUPT_NUMBER        55
 
-#define TIMER_CLK *((uint32_t *)(0x300200C))
+#define TIMER_CLK     *((uint32_t *)(0x300200C))
+#define TIMER_CHANNEL 5
+#define TIMER_BASE    0x030A0000UL + 0x050
 
-static inline void hal_timer4_enable_clk()
+static inline void hal_timer_enable_clk()
 {
-	TIMER_CLK |= (1U << 13);
+	TIMER_CLK |= (1U << (9 + TIMER_CHANNEL));
 }
 
-static inline void hal_timer4_disable_clk()
+static inline void hal_timer_disable_clk()
 {
-	TIMER_CLK &= ~(1U << 13);
+	TIMER_CLK &= ~(1U << (9 + TIMER_CHANNEL));
 }
 #endif // __CVI_TIMER_H__
