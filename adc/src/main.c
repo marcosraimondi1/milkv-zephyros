@@ -13,12 +13,12 @@
 #include <zephyr/irq.h>
 
 // registers
-#define ADC_BASE           0x030F0000UL
-#define PIN_MUX_BASE       0x03001000UL
 #define ADC_PIN_MUX_OFFSET 0x0F8
 #define ADC_PIN_FUNC       3U
 
 // devicetree
+#define PIN_MUX_BASE       (uint32_t)DT_REG_ADDR(DT_NODELABEL(pinctrl))
+#define ADC_BASE           (uint32_t)DT_REG_ADDR(DT_ALIAS(myadc))
 #define TIMER_BASE         (uint32_t)DT_REG_ADDR(DT_ALIAS(mytimer))
 #define TIMER_IRQN         DT_IRQN(DT_ALIAS(mytimer))
 #define TIMER_IRQ_PRIORITY DT_IRQ(DT_ALIAS(mytimer), priority)
