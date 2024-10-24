@@ -14,9 +14,9 @@ zephyr_compile_options(-fdiagnostics-color=always)
 
 # Use hardware acceleration for DSP and Neural Network code
 # You'll need to disable these on non-Arm cores
-add_definitions(-DEI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN=1
-                -DARM_MATH_LOOPUNROLL
-                )
+# add_definitions(-DEI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN=1
+#                 -DARM_MATH_LOOPUNROLL
+#                 )
 
 # Add the Edge Impulse SDK
 add_subdirectory(edge-impulse-sdk/cmake/zephyr)
