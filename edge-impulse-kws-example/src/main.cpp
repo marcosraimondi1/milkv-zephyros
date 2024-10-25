@@ -31,15 +31,10 @@ static K_SEM_DEFINE(samples_ready, 0, 1);
 static float features[NSAMPLES] = {0};
 static int count = 0;
 
-int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
-{
-	memcpy(out_ptr, features + offset, length * sizeof(float));
-	return 0;
-}
-
-void adc_init();
-void timer_init(uint32_t load_count);
-void irq_config();
+void led_countdown(int countdown_s);
+int raw_feature_get_data(size_t offset, size_t length, float *out_ptr);
+static void infer();
+void get_audio();
 
 int main()
 {
@@ -54,56 +49,10 @@ int main()
 		return 1;
 	}
 
-	ei_impulse_result_t result = {0};
-
 	while (1) {
-		printk("Sampling in \n3\n");
-		gpio_pin_set_dt(&led, 1);
-		k_sleep(K_MSEC(500));
-		gpio_pin_set_dt(&led, 0);
-		k_sleep(K_MSEC(500));
-		printk("2\n");
-		gpio_pin_set_dt(&led, 1);
-		k_sleep(K_MSEC(500));
-		gpio_pin_set_dt(&led, 0);
-		k_sleep(K_MSEC(500));
-		printk("1\n");
-		gpio_pin_set_dt(&led, 1);
-		k_sleep(K_MSEC(500));
-		gpio_pin_set_dt(&led, 0);
-		k_sleep(K_MSEC(500));
-		gpio_pin_set_dt(&led, 1);
-		printk("NOW!\n");
-
-		adc_init();
-		timer_init(TIMER_COUNT);
-		irq_config();
-
-		while (count < NSAMPLES) {
-			k_sleep(K_MSEC(100));
-		}
-		count = 0;
-		gpio_pin_set_dt(&led, 0);
-
-		signal_t features_signal;
-		features_signal.total_length = sizeof(features) / sizeof(features[0]);
-		features_signal.get_data = &raw_feature_get_data;
-
-		// invoke the impulse
-		printk("Running the impulse...\n");
-		EI_IMPULSE_ERROR res = run_classifier(&features_signal, &result, false);
-
-		if (res != 0) {
-			return 1;
-		}
-
-		printk("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n",
-		       result.timing.dsp, result.timing.classification, result.timing.anomaly);
-
-		for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-			printk("    %s: %f\n", result.classification[ix].label,
-			       (double)result.classification[ix].value);
-		}
+		led_countdown(3);
+		get_audio();
+		infer();
 	}
 }
 
@@ -147,7 +96,6 @@ static void timer_isr()
 			if (count >= NSAMPLES) {
 				timer_stop();
 				adc_stop();
-				printk("ADC Finished Sampling\n");
 				return;
 			}
 			hal_adc_start(ADC_BASE); // start conversion
@@ -193,4 +141,57 @@ void adc_init()
 	hal_adc_enable_clk();
 	hal_adc_set_sel_channel(ADC_BASE, (uint32_t)1U << (ADC_CTRL_ADC_SEL_Pos + ch_id));
 	hal_adc_cyc_setting(ADC_BASE);
+}
+
+static void infer()
+{
+	ei_impulse_result_t result = {0};
+	signal_t features_signal;
+	features_signal.total_length = sizeof(features) / sizeof(features[0]);
+	features_signal.get_data = &raw_feature_get_data;
+
+	// invoke the impulse
+	printk("Running the impulse...\n");
+	EI_IMPULSE_ERROR res = run_classifier(&features_signal, &result, false);
+
+	if (res != 0) {
+		printk("ERR: Failed to run classifier (%d)\n", res);
+		return;
+	}
+
+	printk("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n",
+	       result.timing.dsp, result.timing.classification, result.timing.anomaly);
+
+	for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+		printk("    %s: %f\n", result.classification[ix].label,
+		       (double)result.classification[ix].value);
+	}
+}
+void get_audio()
+{
+	gpio_pin_set_dt(&led, 1);
+	adc_init();
+	timer_init(TIMER_COUNT);
+	irq_config();
+	while (count < NSAMPLES) {
+		k_sleep(K_MSEC(100));
+	}
+	count = 0;
+	gpio_pin_set_dt(&led, 0);
+}
+
+int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
+{
+	memcpy(out_ptr, features + offset, length * sizeof(float));
+	return 0;
+}
+
+void led_countdown(int countdown_s)
+{
+	for (int i = 0; i < countdown_s; i++) {
+		gpio_pin_set_dt(&led, 1);
+		k_sleep(K_MSEC(500));
+		gpio_pin_set_dt(&led, 0);
+		k_sleep(K_MSEC(500));
+	}
 }
