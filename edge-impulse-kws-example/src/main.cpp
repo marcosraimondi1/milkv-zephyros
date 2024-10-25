@@ -27,7 +27,6 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 #define TIMER_COUNT       (TIMER_CLK_FREQ_HZ / SAMPLING_FREQ_HZ) - 1
 
 // variables
-static K_SEM_DEFINE(samples_ready, 0, 1);
 static float features[NSAMPLES] = {0};
 static int count = 0;
 
@@ -40,7 +39,6 @@ int main()
 {
 	printk("Edge Impulse standalone inferencing (Zephyr)\n");
 	setvbuf(stdout, NULL, _IONBF, 0);
-	gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
 
 	if (sizeof(features) / sizeof(float) != EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE) {
 		printk("The size of your 'features' array is not correct. Expected %d items, but "
@@ -143,6 +141,30 @@ void adc_init()
 	hal_adc_cyc_setting(ADC_BASE);
 }
 
+void get_audio()
+{
+	gpio_pin_set_dt(&led, 1);
+	adc_init();
+	timer_init(TIMER_COUNT);
+	irq_config();
+	while (count < NSAMPLES) {
+		k_sleep(K_MSEC(100));
+	}
+	count = 0;
+	gpio_pin_set_dt(&led, 0);
+}
+
+void led_countdown(int countdown_s)
+{
+	gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+	for (int i = 0; i < countdown_s; i++) {
+		gpio_pin_set_dt(&led, 1);
+		k_sleep(K_MSEC(500));
+		gpio_pin_set_dt(&led, 0);
+		k_sleep(K_MSEC(500));
+	}
+}
+
 static void infer()
 {
 	ei_impulse_result_t result = {0};
@@ -167,31 +189,9 @@ static void infer()
 		       (double)result.classification[ix].value);
 	}
 }
-void get_audio()
-{
-	gpio_pin_set_dt(&led, 1);
-	adc_init();
-	timer_init(TIMER_COUNT);
-	irq_config();
-	while (count < NSAMPLES) {
-		k_sleep(K_MSEC(100));
-	}
-	count = 0;
-	gpio_pin_set_dt(&led, 0);
-}
 
 int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
 {
 	memcpy(out_ptr, features + offset, length * sizeof(float));
 	return 0;
-}
-
-void led_countdown(int countdown_s)
-{
-	for (int i = 0; i < countdown_s; i++) {
-		gpio_pin_set_dt(&led, 1);
-		k_sleep(K_MSEC(500));
-		gpio_pin_set_dt(&led, 0);
-		k_sleep(K_MSEC(500));
-	}
 }
