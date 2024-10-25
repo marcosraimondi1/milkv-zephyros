@@ -10,6 +10,22 @@
 			interrupt-parent = <&plic0>;
 			status = "disabled";
 		};
+
+		timer5: timer@30a0050 {
+			compatible = "sophgo,cv18xx-timer";
+			reg = <0x30a0050 0x010>;
+			interrupts = <55 1>; 
+			status = "okay";
+		};
+
+		adc1: adc@30f0000 {
+			compatible = "sophgo,cv18xx-adc";
+			pinctrl-0 = <&adc_default>;
+			pinctrl-names = "default";
+			reg = <0x30f0000 0x10000>;
+			channels = <3>;
+			status = "okay";
+		};
 	};
 
 	// location of vdev0buffer in linux dts
@@ -23,6 +39,11 @@
 		zephyr,ipc_shm = &mcusram3;
 		zephyr,ipc = &ipm;
     };
+
+	aliases {
+		mytimer = &timer5;
+		myadc = &adc1;
+	};
 };
 
 &uart0 {
@@ -32,4 +53,12 @@
 
 &ipm {
 	status = "okay";
+};
+
+&pinctrl {
+	adc_default: adc_default {
+		group1 {
+			pinmux = <CVI_PINMUX(ADC1, XGPIOB_3)>;
+		};
+	};
 };

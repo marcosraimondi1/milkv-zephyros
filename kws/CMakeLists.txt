@@ -12,11 +12,14 @@ include(utils/cmake/utils.cmake)
 # Needed for colorful output
 zephyr_compile_options(-fdiagnostics-color=always)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+
 # Use hardware acceleration for DSP and Neural Network code
 # You'll need to disable these on non-Arm cores
-add_definitions(-DEI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN=1
-                -DARM_MATH_LOOPUNROLL
-                )
+# add_definitions(-DEI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN=1
+#                 -DARM_MATH_LOOPUNROLL
+#                 )
 
 # METAL_MAX_DEVICE_REGIONS is used to give the number of memory regions shared
 # between processors. By default only one region is defined for the vrings
@@ -55,4 +58,4 @@ list(APPEND SOURCE_FILES ${MODEL_FILES})
 
 # add all sources to the project
 target_sources(app PRIVATE ${SOURCE_FILES})
-target_sources(app PRIVATE src/kws/kws.cpp src/encoding/encoding.cpp src/main.cpp)
+target_sources(app PRIVATE src/kws/kws.cpp src/hw/funcs.cpp src/encoding/encoding.cpp src/main.cpp)
